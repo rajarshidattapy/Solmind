@@ -33,7 +33,7 @@ const MainApp = () => {
   const capsuleDetailMatch = location.pathname.match(/^\/app\/marketplace\/(.+)$/);
   const isCapsuleDetail = capsuleDetailMatch !== null;
 
-  // Load preferences on mount (only once)
+  // Load preferences from Redis (Vercel KV) on mount (only once)
   useEffect(() => {
     if (preferencesLoadedRef.current) return; // Only load once
     if (!connected || !publicKey) return; // Need wallet to load preferences
@@ -58,7 +58,7 @@ const MainApp = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, publicKey]); // api is stable, doesn't need to be in deps
 
-  // Save preferences when they change
+  // Save preferences to Redis when they change
   useEffect(() => {
     const savePreferences = async () => {
       if (!connected || !publicKey) return; // Need wallet to save preferences
@@ -179,14 +179,14 @@ const MainApp = () => {
   // If we're on a capsule detail page, render it without the tab navigation
   if (isCapsuleDetail) {
     return (
-      <div className="min-h-screen bg-zinc-950">
+      <div className="min-h-screen bg-gray-900">
         <CapsuleDetail />
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-zinc-950">
+    <div className="min-h-screen bg-gray-900">
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -195,7 +195,7 @@ const MainApp = () => {
         customLLMs={customLLMs}
         onAddLLM={handleAddLLM}
       />
-      <main className="flex-1 overflow-hidden flex flex-col">
+      <main>
         {renderContent()}
       </main>
     </div>
