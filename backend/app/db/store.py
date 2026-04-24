@@ -6,3 +6,5 @@ capsules: dict = {}
 earnings: list = []
 staking: list = []
 preferences: dict = {}
+debates: dict = {}
+kv_snapshots: dict = {}

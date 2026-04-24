@@ -149,6 +149,52 @@ class LLMResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+# KV Memory Models
+class KVSnapshot(BaseModel):
+    id: str
+    agent_id: str
+    chat_id: str
+    storage_hash: str
+    compression_ratio: float
+    original_size_bytes: int
+    compressed_size_bytes: int
+    bits_per_token: float
+    model: str
+    provider: str
+    message_count: int
+    verified: bool
+    wallet_address: Optional[str] = None
+    created_at: datetime
+    on_chain_tx: Optional[str] = None
+
+
+class KVSnapshotCreate(BaseModel):
+    agent_id: str
+    chat_id: str
+
+
+# Debate Models
+class DebateMechanism(str, Enum):
+    DEBATE = "debate"
+    VOTE = "vote"
+
+
+class DebateStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class DebateSessionCreate(BaseModel):
+    task: str
+    agents: List[str]
+    mechanism: DebateMechanism = DebateMechanism.DEBATE
+    rounds: int = 3
+    quorum: int = 2
+    payment_locked: float = 0.0
+
+
 # API Response Models
 class APIResponse(BaseModel):
     success: bool

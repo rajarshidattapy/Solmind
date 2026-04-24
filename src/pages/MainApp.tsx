@@ -6,6 +6,7 @@ import MarketplaceView from './MarketplaceView';
 import WalletView from './WalletView';
 import Settings from './Settings';
 import CapsuleDetail from './CapsuleDetail';
+import DebateArena from './DebateArena';
 import { useApiClient } from '../lib/api';
 import { useWallet } from '@solana/wallet-adapter-react';
 
@@ -159,6 +160,8 @@ const MainApp = () => {
             onAddLLM={handleAddLLM}
           />
         );
+      case 'debate':
+        return <DebateArena customLLMs={customLLMs} />;
       case 'marketplace':
         return <MarketplaceView activeSubTab={activeSubTab} />;
       case 'wallet':
@@ -186,7 +189,7 @@ const MainApp = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900">
+    <div className="h-screen flex flex-col bg-zinc-950">
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -195,7 +198,7 @@ const MainApp = () => {
         customLLMs={customLLMs}
         onAddLLM={handleAddLLM}
       />
-      <main>
+      <main className="flex-1 overflow-hidden flex flex-col">
         {renderContent()}
       </main>
     </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Brain, Store, Wallet, Settings, MessageSquare, Coins, TrendingUp, ArrowLeft, Plus, X } from 'lucide-react';
+import { Brain, Store, Wallet, Settings, MessageSquare, Coins, TrendingUp, ArrowLeft, Plus, X, Scale } from 'lucide-react';
 import { useSolanaBalance } from '../hooks/useSolanaBalance';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useApiClient } from '../lib/api';
@@ -73,9 +73,10 @@ const Navbar: React.FC<NavbarProps> = ({
 
   const mainTabs = [
     { id: 'agents', label: 'Agents', icon: Brain },
+    { id: 'debate', label: 'Debate', icon: Scale },
     { id: 'marketplace', label: 'Marketplace', icon: Store },
     { id: 'wallet', label: 'Wallet', icon: Wallet },
-    { id: 'settings', label: 'Settings', icon: Settings }
+    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   const platforms = [

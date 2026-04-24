@@ -279,7 +279,106 @@ export class ApiClient {
     });
   }
 
-  // Preferences (stored in Vercel KV/Redis)
+  // Debate
+  async startDebate(
+    session: {
+      task: string;
+      agents: string[];
+      mechanism: 'debate' | 'vote';
+      rounds: number;
+      quorum: number;
+      payment_locked: number;
+    },
+    onEvent: (event: Record<string, any>) => void,
+    onComplete: () => void,
+    onError: (error: Error) => void
+  ): Promise<void> {
+    const walletAddress = this.getWalletAddress();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (walletAddress) headers['X-Wallet-Address'] = walletAddress;
+
+    const response = await fetch(`${this.baseUrl}/api/v1/debate/start`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(session),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Unknown error' }));
+      throw new Error(error.message || `HTTP error: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) throw new Error('No response body');
+
+    let buffer = '';
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6));
+              onEvent(event);
+              if (event.type === 'completed' || event.type === 'error') {
+                onComplete();
+                return;
+              }
+            } catch { /* skip invalid JSON */ }
+          }
+        }
+      }
+      onComplete();
+    } catch (err) {
+      onError(err instanceof Error ? err : new Error('Stream error'));
+    }
+  }
+
+  async getDebate(debateId: string) {
+    return this.request(`/api/v1/debate/${encodeURIComponent(debateId)}`);
+  }
+
+  async getDebateReceipt(debateId: string) {
+    return this.request(`/api/v1/debate/${encodeURIComponent(debateId)}/receipt`);
+  }
+
+  async listDebates() {
+    return this.request('/api/v1/debate/');
+  }
+
+  // KV Memory
+  async createSnapshot(agentId: string, chatId: string) {
+    return this.request('/api/v1/memory/snapshot', {
+      method: 'POST',
+      body: JSON.stringify({ agent_id: agentId, chat_id: chatId }),
+    });
+  }
+
+  async getSnapshotHistory(agentId: string) {
+    return this.request(`/api/v1/memory/history/${encodeURIComponent(agentId)}`);
+  }
+
+  async restoreSnapshot(agentId: string, snapshotId?: string) {
+    const query = snapshotId ? `?snapshot_id=${encodeURIComponent(snapshotId)}` : '';
+    return this.request(`/api/v1/memory/restore/${encodeURIComponent(agentId)}${query}`);
+  }
+
+  async rollbackSnapshot(snapshotId: string) {
+    return this.request(`/api/v1/memory/rollback/${encodeURIComponent(snapshotId)}`, {
+      method: 'POST',
+    });
+  }
+
+  async verifySnapshot(snapshotId: string) {
+    return this.request(`/api/v1/memory/verify/${encodeURIComponent(snapshotId)}`);
+  }
+
+  // Preferences
   async getPreferences() {
     return this.request<{
       default_model?: string;

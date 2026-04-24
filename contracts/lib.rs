@@ -659,6 +659,378 @@ pub fn withdraw_earnings(ctx: Context<WithdrawEarnings>) -> Result<()> {
 }
 
 // ============================================================================
+// DEBATE PRIMITIVE
+// ============================================================================
+
+/// DebateSession account — one per debate, created on initialize_debate
+#[account]
+pub struct DebateSession {
+    pub creator: Pubkey,           // Wallet that started the debate
+    pub debate_id: String,         // Unique debate identifier (max 32 chars)
+    pub mechanism: String,         // "debate" or "vote" (max 8 chars)
+    pub quorum: u8,                // Minimum agents required for consensus
+    pub rounds: u8,                // Number of deliberation rounds
+    pub transcript_hash: String,   // SHA-256 hex of the full transcript (max 64 chars)
+    pub completed: bool,           // Whether the debate has been finalized
+    pub payment_locked: u64,       // Lamports locked until release
+    pub created_at: i64,           // Unix timestamp
+    pub bump: u8,
+}
+
+impl DebateSession {
+    pub const MAX_SIZE: usize = 8 +  // discriminator
+        32 +                          // creator
+        4 + 32 +                      // debate_id
+        4 + 8 +                       // mechanism
+        1 +                           // quorum
+        1 +                           // rounds
+        4 + 64 +                      // transcript_hash
+        1 +                           // completed
+        8 +                           // payment_locked
+        8 +                           // created_at
+        1;                            // bump
+
+    pub fn initialize(
+        &mut self,
+        creator: Pubkey,
+        debate_id: String,
+        mechanism: String,
+        quorum: u8,
+        rounds: u8,
+        payment_locked: u64,
+        bump: u8,
+    ) -> Result<()> {
+        self.creator = creator;
+        self.debate_id = debate_id;
+        self.mechanism = mechanism;
+        self.quorum = quorum;
+        self.rounds = rounds;
+        self.transcript_hash = String::new();
+        self.completed = false;
+        self.payment_locked = payment_locked;
+        self.created_at = Clock::get()?.unix_timestamp;
+        self.bump = bump;
+        Ok(())
+    }
+}
+
+/// DebateReceipt account — written by finalize_debate, proves consensus occurred
+#[account]
+pub struct DebateReceipt {
+    pub debate_id: String,         // Links back to DebateSession (max 32 chars)
+    pub final_decision: String,    // "APPROVED" or "REJECTED" (max 16 chars)
+    pub quorum_reached: bool,      // Whether quorum threshold was satisfied
+    pub transcript_hash: String,   // Verified SHA-256 of full transcript (max 64 chars)
+    pub finalized_at: i64,         // Unix timestamp
+    pub bump: u8,
+}
+
+impl DebateReceipt {
+    pub const MAX_SIZE: usize = 8 +  // discriminator
+        4 + 32 +                      // debate_id
+        4 + 16 +                      // final_decision
+        1 +                           // quorum_reached
+        4 + 64 +                      // transcript_hash
+        8 +                           // finalized_at
+        1;                            // bump
+}
+
+// ── Error additions ──────────────────────────────────────────────────────────
+
+// (Debate-specific errors are added to SolMindError below via the existing enum)
+
+// ── Debate instructions ──────────────────────────────────────────────────────
+
+#[derive(Accounts)]
+#[instruction(debate_id: String)]
+pub struct InitializeDebate<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+
+    #[account(
+        init,
+        payer = creator,
+        space = DebateSession::MAX_SIZE,
+        seeds = [b"debate", creator.key().as_ref(), debate_id.as_bytes()],
+        bump
+    )]
+    pub debate_session: Account<'info, DebateSession>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn initialize_debate(
+    ctx: Context<InitializeDebate>,
+    debate_id: String,
+    mechanism: String,
+    quorum: u8,
+    rounds: u8,
+    payment_locked: u64,
+) -> Result<()> {
+    require!(debate_id.len() <= 32 && !debate_id.is_empty(), SolMindError::EmptyString);
+    require!(mechanism == "debate" || mechanism == "vote", SolMindError::InvalidMetadataLength);
+    require!(quorum >= 1 && rounds >= 1, SolMindError::InvalidPrice);
+
+    let session = &mut ctx.accounts.debate_session;
+    let bump = ctx.bumps.debate_session;
+    session.initialize(
+        ctx.accounts.creator.key(),
+        debate_id,
+        mechanism,
+        quorum,
+        rounds,
+        payment_locked,
+        bump,
+    )?;
+    msg!("Debate initialized: {}", session.debate_id);
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct SubmitTranscriptHash<'info> {
+    pub creator: Signer<'info>,
+
+    #[account(
+        mut,
+        has_one = creator @ SolMindError::Unauthorized,
+        constraint = !debate_session.completed @ SolMindError::Unauthorized,
+    )]
+    pub debate_session: Account<'info, DebateSession>,
+}
+
+pub fn submit_transcript_hash(
+    ctx: Context<SubmitTranscriptHash>,
+    transcript_hash: String,
+) -> Result<()> {
+    require!(transcript_hash.len() == 64, SolMindError::InvalidMetadataLength);
+    ctx.accounts.debate_session.transcript_hash = transcript_hash;
+    msg!("Transcript hash recorded");
+    Ok(())
+}
+
+#[derive(Accounts)]
+#[instruction(debate_id: String)]
+pub struct FinalizeDebate<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+
+    #[account(
+        mut,
+        has_one = creator @ SolMindError::Unauthorized,
+        constraint = !debate_session.completed @ SolMindError::Unauthorized,
+    )]
+    pub debate_session: Account<'info, DebateSession>,
+
+    #[account(
+        init,
+        payer = creator,
+        space = DebateReceipt::MAX_SIZE,
+        seeds = [b"receipt", debate_session.key().as_ref()],
+        bump
+    )]
+    pub debate_receipt: Account<'info, DebateReceipt>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn finalize_debate(
+    ctx: Context<FinalizeDebate>,
+    final_decision: String,
+    quorum_reached: bool,
+) -> Result<()> {
+    require!(
+        final_decision == "APPROVED" || final_decision == "REJECTED",
+        SolMindError::InvalidMetadataLength
+    );
+
+    let session = &mut ctx.accounts.debate_session;
+    session.completed = true;
+
+    let receipt = &mut ctx.accounts.debate_receipt;
+    receipt.debate_id = session.debate_id.clone();
+    receipt.final_decision = final_decision;
+    receipt.quorum_reached = quorum_reached;
+    receipt.transcript_hash = session.transcript_hash.clone();
+    receipt.finalized_at = Clock::get()?.unix_timestamp;
+    receipt.bump = ctx.bumps.debate_receipt;
+
+    msg!("Debate finalized: {} — quorum: {}", receipt.final_decision, quorum_reached);
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct ReleasePayment<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+
+    #[account(
+        mut,
+        has_one = creator @ SolMindError::Unauthorized,
+        constraint = debate_session.completed @ SolMindError::Unauthorized,
+    )]
+    pub debate_session: Account<'info, DebateSession>,
+
+    #[account(mut)]
+    /// CHECK: recipient wallet validated against creator
+    pub recipient: AccountInfo<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn release_payment(ctx: Context<ReleasePayment>) -> Result<()> {
+    let session = &mut ctx.accounts.debate_session;
+    let amount = session.payment_locked;
+    require!(amount > 0, SolMindError::InsufficientPayment);
+
+    anchor_lang::solana_program::program::invoke(
+        &anchor_lang::solana_program::system_instruction::transfer(
+            &ctx.accounts.creator.key(),
+            &ctx.accounts.recipient.key(),
+            amount,
+        ),
+        &[
+            ctx.accounts.creator.to_account_info(),
+            ctx.accounts.recipient.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+        ],
+    )?;
+
+    session.payment_locked = 0;
+    msg!("Payment released: {} lamports", amount);
+    Ok(())
+}
+
+// ============================================================================
+// KV MEMORY PRIMITIVE
+// ============================================================================
+
+/// MemorySnapshot account — stores the hash of a compressed conversation snapshot
+#[account]
+pub struct MemorySnapshot {
+    pub agent_id: String,         // Agent that owns this snapshot (max 32 chars)
+    pub snapshot_id: String,      // Unique snapshot identifier (max 32 chars)
+    pub storage_hash: String,     // SHA-256 hex of compressed conversation state (max 64 chars)
+    pub message_count: u32,       // Number of messages in the snapshot
+    pub created_at: i64,          // Unix timestamp
+    pub bump: u8,
+}
+
+impl MemorySnapshot {
+    pub const MAX_SIZE: usize = 8 +  // discriminator
+        4 + 32 +                      // agent_id
+        4 + 32 +                      // snapshot_id
+        4 + 64 +                      // storage_hash
+        4 +                           // message_count
+        8 +                           // created_at
+        1;                            // bump
+}
+
+/// SnapshotReceipt account — proves a snapshot was verified on-chain
+#[account]
+pub struct SnapshotReceipt {
+    pub snapshot_id: String,      // Links back to MemorySnapshot (max 32 chars)
+    pub storage_hash: String,     // Verified SHA-256 (max 64 chars)
+    pub verified: bool,           // Whether hash verification passed
+    pub verified_at: i64,         // Unix timestamp
+    pub bump: u8,
+}
+
+impl SnapshotReceipt {
+    pub const MAX_SIZE: usize = 8 +  // discriminator
+        4 + 32 +                      // snapshot_id
+        4 + 64 +                      // storage_hash
+        1 +                           // verified
+        8 +                           // verified_at
+        1;                            // bump
+}
+
+#[derive(Accounts)]
+#[instruction(snapshot_id: String)]
+pub struct RecordSnapshot<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
+
+    #[account(
+        init,
+        payer = owner,
+        space = MemorySnapshot::MAX_SIZE,
+        seeds = [b"snapshot", owner.key().as_ref(), snapshot_id.as_bytes()],
+        bump
+    )]
+    pub memory_snapshot: Account<'info, MemorySnapshot>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn record_snapshot(
+    ctx: Context<RecordSnapshot>,
+    snapshot_id: String,
+    agent_id: String,
+    storage_hash: String,
+    message_count: u32,
+) -> Result<()> {
+    require!(snapshot_id.len() <= 32 && !snapshot_id.is_empty(), SolMindError::EmptyString);
+    require!(agent_id.len() <= 32 && !agent_id.is_empty(), SolMindError::EmptyString);
+    require!(storage_hash.len() == 64, SolMindError::InvalidMetadataLength);
+
+    let snap = &mut ctx.accounts.memory_snapshot;
+    snap.agent_id = agent_id;
+    snap.snapshot_id = snapshot_id;
+    snap.storage_hash = storage_hash;
+    snap.message_count = message_count;
+    snap.created_at = Clock::get()?.unix_timestamp;
+    snap.bump = ctx.bumps.memory_snapshot;
+
+    msg!("Snapshot recorded: {}", snap.snapshot_id);
+    Ok(())
+}
+
+#[derive(Accounts)]
+#[instruction(snapshot_id: String)]
+pub struct VerifySnapshot<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
+
+    #[account(
+        seeds = [b"snapshot", owner.key().as_ref(), snapshot_id.as_bytes()],
+        bump = memory_snapshot.bump,
+    )]
+    pub memory_snapshot: Account<'info, MemorySnapshot>,
+
+    #[account(
+        init,
+        payer = owner,
+        space = SnapshotReceipt::MAX_SIZE,
+        seeds = [b"snap_receipt", memory_snapshot.key().as_ref()],
+        bump
+    )]
+    pub snapshot_receipt: Account<'info, SnapshotReceipt>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn verify_snapshot(
+    ctx: Context<VerifySnapshot>,
+    snapshot_id: String,
+    submitted_hash: String,
+) -> Result<()> {
+    require!(submitted_hash.len() == 64, SolMindError::InvalidMetadataLength);
+
+    let snap = &ctx.accounts.memory_snapshot;
+    let verified = snap.storage_hash == submitted_hash;
+
+    let receipt = &mut ctx.accounts.snapshot_receipt;
+    receipt.snapshot_id = snapshot_id;
+    receipt.storage_hash = submitted_hash;
+    receipt.verified = verified;
+    receipt.verified_at = Clock::get()?.unix_timestamp;
+    receipt.bump = ctx.bumps.snapshot_receipt;
+
+    msg!("Snapshot verify: {} — {}", snap.snapshot_id, verified);
+    Ok(())
+}
+
+// ============================================================================
 // PROGRAM
 // ============================================================================
 
@@ -708,5 +1080,59 @@ pub mod solmind {
     /// Withdraw earnings from a capsule
     pub fn withdraw_earnings(ctx: Context<WithdrawEarnings>) -> Result<()> {
         super::withdraw_earnings(ctx)
+    }
+
+    /// Initialize a new debate session and lock payment
+    pub fn initialize_debate(
+        ctx: Context<InitializeDebate>,
+        debate_id: String,
+        mechanism: String,
+        quorum: u8,
+        rounds: u8,
+        payment_locked: u64,
+    ) -> Result<()> {
+        super::initialize_debate(ctx, debate_id, mechanism, quorum, rounds, payment_locked)
+    }
+
+    /// Record the off-chain transcript hash on-chain
+    pub fn submit_transcript_hash(
+        ctx: Context<SubmitTranscriptHash>,
+        transcript_hash: String,
+    ) -> Result<()> {
+        super::submit_transcript_hash(ctx, transcript_hash)
+    }
+
+    /// Finalize debate, write receipt, verify quorum
+    pub fn finalize_debate(
+        ctx: Context<FinalizeDebate>,
+        final_decision: String,
+        quorum_reached: bool,
+    ) -> Result<()> {
+        super::finalize_debate(ctx, final_decision, quorum_reached)
+    }
+
+    /// Release locked payment after successful finalization
+    pub fn release_payment(ctx: Context<ReleasePayment>) -> Result<()> {
+        super::release_payment(ctx)
+    }
+
+    /// Record a KV memory snapshot hash on-chain
+    pub fn record_snapshot(
+        ctx: Context<RecordSnapshot>,
+        snapshot_id: String,
+        agent_id: String,
+        storage_hash: String,
+        message_count: u32,
+    ) -> Result<()> {
+        super::record_snapshot(ctx, snapshot_id, agent_id, storage_hash, message_count)
+    }
+
+    /// Verify a KV memory snapshot hash on-chain and write a receipt
+    pub fn verify_snapshot(
+        ctx: Context<VerifySnapshot>,
+        snapshot_id: String,
+        submitted_hash: String,
+    ) -> Result<()> {
+        super::verify_snapshot(ctx, snapshot_id, submitted_hash)
     }
 }

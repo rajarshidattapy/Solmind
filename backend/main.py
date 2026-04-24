@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 import logging
 
-from app.api.v1 import agents, marketplace, capsules, wallet, auth, preferences
+from app.api.v1 import agents, marketplace, capsules, wallet, auth, preferences, debate, kv_memory
 from app.core.config import settings
 
 logging.basicConfig(
@@ -42,6 +42,8 @@ app.include_router(capsules.router, prefix="/api/v1/capsules", tags=["Capsules"]
 app.include_router(marketplace.router, prefix="/api/v1/marketplace", tags=["Marketplace"])
 app.include_router(wallet.router, prefix="/api/v1/wallet", tags=["Wallet"])
 app.include_router(preferences.router, prefix="/api/v1", tags=["Preferences"])
+app.include_router(debate.router, prefix="/api/v1/debate", tags=["Debate"])
+app.include_router(kv_memory.router, prefix="/api/v1/memory", tags=["KV Memory"])
 
 
 @app.get("/")

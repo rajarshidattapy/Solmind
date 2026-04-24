@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { MessageSquare, Plus, Brain, Clock, Sparkles } from 'lucide-react';
+import { MessageSquare, Plus, ChevronRight, Archive } from 'lucide-react';
 import AgentChat from './AgentChat';
+import MemoryTimeline from './MemoryTimeline';
 import { useApiClient } from '../lib/api';
 
 interface Message {
@@ -34,111 +35,76 @@ interface AgentsViewProps {
   onAddLLM: (llm: LLMConfig) => void;
 }
 
+type View = 'list' | 'chat' | 'memory';
+
 const AgentsView: React.FC<AgentsViewProps> = ({ activeModel, customLLMs, onAddLLM }) => {
   const api = useApiClient();
-  const [activeView, setActiveView] = useState<'list' | 'chat'>('list');
+  const [activeView, setActiveView] = useState<View>('list');
   const [selectedChatId, setSelectedChatId] = useState<string | undefined>(undefined);
   const [allChats, setAllChats] = useState<Record<string, Chat[]>>({});
   const [loadingChats, setLoadingChats] = useState<Record<string, boolean>>({});
   const prevCustomLLMsLengthRef = useRef<number>(0);
 
-  // Get agent ID from model name
   const getAgentId = (model: string): string => {
-    // Check if it's a custom LLM
-    const customLLM = customLLMs.find(llm => 
-      llm.id === model || 
-      llm.name === model || 
-      llm.displayName === model
-    );
-    if (customLLM) {
-      return customLLM.id;
-    }
-    // Default agents use their name as ID
-    return model;
+    const customLLM = customLLMs.find(llm => llm.id === model || llm.name === model || llm.displayName === model);
+    return customLLM ? customLLM.id : model;
   };
 
-  // Load chats from API
-  const loadChats = async (model: string, force: boolean = false) => {
+  const loadChats = async (model: string, force = false) => {
     const agentId = getAgentId(model);
-    
-    // Skip if already loading or already loaded (unless force refresh)
-    if (!force && (loadingChats[model] || allChats[model])) {
-      return;
-    }
+    if (!force && (loadingChats[model] || allChats[model])) return;
 
     setLoadingChats(prev => ({ ...prev, [model]: true }));
-
     try {
       const apiChats = await api.getChats(agentId) as any[];
-      
-      // Transform API response to frontend Chat format
       const transformedChats: Chat[] = apiChats.map((apiChat: any) => {
-        // Transform messages
         const messages: Message[] = (apiChat.messages || []).map((msg: any) => ({
           id: msg.id || Date.now().toString(),
           role: msg.role as 'user' | 'assistant',
           content: msg.content,
-          timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+          timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
         }));
-
+        const ts = apiChat.timestamp ? new Date(apiChat.timestamp) : new Date();
+        const label = ts.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         return {
           id: apiChat.id,
-          name: apiChat.id,
+          name: label,
           lastMessage: apiChat.last_message || '',
-          timestamp: apiChat.timestamp ? new Date(apiChat.timestamp) : new Date(),
+          timestamp: ts,
           messageCount: apiChat.message_count || messages.length,
-          messages: messages
+          messages,
+          memorySize: (apiChat.memory_size as 'Small' | 'Medium' | 'Large') || 'Small',
         };
       });
-
-      setAllChats(prev => ({
-        ...prev,
-        [model]: transformedChats
-      }));
-
-      console.log(`Loaded ${transformedChats.length} chats for ${model}`);
-    } catch (error) {
-      console.error(`Error loading chats for ${model}:`, error);
-      // Initialize with empty array on error
-      setAllChats(prev => ({
-        ...prev,
-        [model]: []
-      }));
+      setAllChats(prev => ({ ...prev, [model]: transformedChats }));
+    } catch {
+      setAllChats(prev => ({ ...prev, [model]: [] }));
     } finally {
       setLoadingChats(prev => ({ ...prev, [model]: false }));
     }
   };
 
-  // Reset view to list when activeModel changes (switching agents)
   useEffect(() => {
     setActiveView('list');
     setSelectedChatId(undefined);
   }, [activeModel]);
 
-  // Load chats when activeModel changes
   useEffect(() => {
-    if (activeModel && !allChats[activeModel]) {
-      loadChats(activeModel);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeModel]); // Only reload when activeModel changes (customLLMs are handled separately)
+    if (activeModel && !allChats[activeModel]) loadChats(activeModel);
+  }, [activeModel]);
 
-  // Reset view to list when a new agent is created (customLLMs length increases)
   useEffect(() => {
-    const currentLength = customLLMs.length;
-    if (currentLength > prevCustomLLMsLengthRef.current && prevCustomLLMsLengthRef.current > 0) {
-      // A new agent was added, reset to list view
+    const current = customLLMs.length;
+    if (current > prevCustomLLMsLengthRef.current && prevCustomLLMsLengthRef.current > 0) {
       setActiveView('list');
       setSelectedChatId(undefined);
     }
-    prevCustomLLMsLengthRef.current = currentLength;
+    prevCustomLLMsLengthRef.current = current;
   }, [customLLMs]);
 
-  // Initialize custom LLM chat arrays
   useEffect(() => {
     customLLMs.forEach(llm => {
       if (!allChats[llm.id] && !allChats[llm.name]) {
-        // Don't load yet, just initialize empty array
         setAllChats(prev => ({ ...prev, [llm.id]: [], [llm.name]: [] }));
       }
     });
@@ -147,32 +113,18 @@ const AgentsView: React.FC<AgentsViewProps> = ({ activeModel, customLLMs, onAddL
   const currentChats = allChats[activeModel] || [];
   const selectedChat = selectedChatId ? currentChats.find(c => c.id === selectedChatId) : undefined;
 
-  // Validate selectedChatId - if it doesn't exist in current chats, reset to list view
   useEffect(() => {
     if (selectedChatId && activeView === 'chat') {
-      const chatExists = currentChats.some(c => c.id === selectedChatId);
-      if (!chatExists) {
-        // Selected chat doesn't exist for current model, reset to list
+      if (!currentChats.some(c => c.id === selectedChatId)) {
         setActiveView('list');
         setSelectedChatId(undefined);
       }
     }
   }, [selectedChatId, activeView, activeModel, currentChats]);
 
-  const getMemoryColor = (size: string) => {
-    switch (size) {
-      case 'Small': return 'text-green-400';
-      case 'Medium': return 'text-yellow-400';
-      case 'Large': return 'text-red-400';
-      default: return 'text-gray-400';
-    }
-  };
-
   const getModelDisplayName = (model: string) => {
-    const customLLM = customLLMs.find(llm => llm.name === model);
-    if (customLLM) return customLLM.displayName;
-    
-    return model;
+    const llm = customLLMs.find(l => l.name === model);
+    return llm ? llm.displayName : model;
   };
 
   const handleContinueChat = (chatId: string) => {
@@ -181,74 +133,58 @@ const AgentsView: React.FC<AgentsViewProps> = ({ activeModel, customLLMs, onAddL
   };
 
   const handleNewChat = () => {
-    // Create a temporary chat entry (will be replaced with real ID when created via API)
     const newChatId = `new-${Date.now()}`;
-    const newChat: Chat = {
-      id: newChatId,
-      name: newChatId,
-      memorySize: 'Small',
-      lastMessage: '',
-      timestamp: new Date(),
-      messageCount: 0,
-      messages: []
-    };
-    
     setAllChats(prev => ({
       ...prev,
-      [activeModel]: [newChat, ...(prev[activeModel] || [])]
+      [activeModel]: [{
+        id: newChatId,
+        name: 'New Chat',
+        memorySize: 'Small',
+        lastMessage: '',
+        timestamp: new Date(),
+        messageCount: 0,
+        messages: [],
+      }, ...(prev[activeModel] || [])],
     }));
-    
     setSelectedChatId(newChatId);
     setActiveView('chat');
   };
 
-  const handleBackToList = () => {
-    setActiveView('list');
-  };
+  const handleBackToList = () => setActiveView('list');
 
   const handleUpdateMessages = (chatId: string, messages: Message[]) => {
     setAllChats(prev => ({
       ...prev,
       [activeModel]: (prev[activeModel] || []).map(chat => {
-        if (chat.id === chatId) {
-          const lastMsg = messages[messages.length - 1];
-          // Ensure timestamp is Date object
-          const lastMsgTimestamp = lastMsg?.timestamp instanceof Date 
-            ? lastMsg.timestamp 
-            : lastMsg?.timestamp 
-              ? new Date(lastMsg.timestamp as string) 
-              : chat.timestamp;
-          
-          return {
-            ...chat,
-            messages: messages.map(msg => ({
-              ...msg,
-              timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp as string)
-            })),
-            messageCount: messages.length,
-            lastMessage: lastMsg?.content.substring(0, 100) || '',
-            timestamp: lastMsgTimestamp,
-            name: chat.id
-          };
-        }
-        return chat;
-      })
+        if (chat.id !== chatId) return chat;
+        const lastMsg = messages[messages.length - 1];
+        const ts = lastMsg?.timestamp instanceof Date ? lastMsg.timestamp : lastMsg?.timestamp ? new Date(lastMsg.timestamp as string) : chat.timestamp;
+        return {
+          ...chat,
+          messages: messages.map(msg => ({
+            ...msg,
+            timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp as string),
+          })),
+          messageCount: messages.length,
+          lastMessage: lastMsg?.content.substring(0, 100) || '',
+          timestamp: ts,
+        };
+      }),
     }));
-    
-    // Note: We don't refresh from API here because:
-    // 1. Local state is already updated above
-    // 2. Aggressive refresh causes chats to disappear
-    // 3. Data persistence happens on backend, refresh happens when user navigates away and back
   };
 
   const handleUpdateChatId = (oldId: string, newId: string) => {
-    // Update chat ID mapping when chat is created via API
     setAllChats(prev => {
       const updated = { ...prev };
-      const chats = updated[activeModel] || [];
-      const chatIndex = chats.findIndex(c => c.id === oldId);
-      if (chatIndex !== -1) {
-        chats[chatIndex] = { ...chats[chatIndex], id: newId, name: newId };
+      const chats = [...(updated[activeModel] || [])];
+      const idx = chats.findIndex(c => c.id === oldId);
+      if (idx !== -1) {
+        const ts = chats[idx].timestamp;
+        chats[idx] = {
+          ...chats[idx],
+          id: newId,
+          name: ts.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        };
         updated[activeModel] = chats;
       }
       return updated;
@@ -256,25 +192,35 @@ const AgentsView: React.FC<AgentsViewProps> = ({ activeModel, customLLMs, onAddL
     setSelectedChatId(newId);
   };
 
+  // --- Memory view ---
+  if (activeView === 'memory') {
+    return (
+      <MemoryTimeline
+        agentId={getAgentId(activeModel)}
+        agentName={getModelDisplayName(activeModel)}
+        chatId={selectedChatId}
+        onBack={handleBackToList}
+      />
+    );
+  }
 
-  // Only show chat view if we have a valid selectedChat for the current model
+  // --- Chat view ---
   if (activeView === 'chat' && selectedChatId && selectedChat) {
     return (
-      <AgentChat 
+      <AgentChat
         activeModel={activeModel}
         chatId={selectedChatId}
+        chatName={selectedChat.name}
         initialMessages={(selectedChat.messages || []).map(msg => ({
           ...msg,
-          timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp as string)
+          timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp as string),
         }))}
         onBack={handleBackToList}
-        onUpdateMessages={(messages) => {
-          // Ensure all timestamps are Date objects
-          const normalizedMessages = messages.map(msg => ({
+        onUpdateMessages={messages => {
+          handleUpdateMessages(selectedChatId, messages.map(msg => ({
             ...msg,
-            timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp as string)
-          }));
-          handleUpdateMessages(selectedChatId, normalizedMessages);
+            timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp as string),
+          })));
         }}
         onUpdateChatId={handleUpdateChatId}
         customLLMs={customLLMs}
@@ -283,98 +229,74 @@ const AgentsView: React.FC<AgentsViewProps> = ({ activeModel, customLLMs, onAddL
     );
   }
 
+  // --- List view ---
   return (
-    <div className="min-h-screen bg-gray-900 p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-white mb-2">
-              {getModelDisplayName(activeModel)} Chats
-            </h1>
-            <p className="text-gray-400">
-              Manage your conversations and memory capsules for {getModelDisplayName(activeModel)}
-            </p>
-          </div>
-          
-          <button 
-            onClick={handleNewChat}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors flex items-center"
+    <div className="flex flex-col h-full bg-zinc-950">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+        <div>
+          <h2 className="text-sm font-semibold text-white">{getModelDisplayName(activeModel)}</h2>
+          <p className="text-xs text-zinc-500">
+            {currentChats.length} {currentChats.length === 1 ? 'chat' : 'chats'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveView('memory')}
+            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-600 px-3 py-1.5 rounded-lg transition-colors"
           >
-            <Plus className="h-5 w-5 mr-2" />
+            <Archive className="h-3.5 w-3.5" />
+            Memory
+          </button>
+          <button
+            onClick={handleNewChat}
+            className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
             New Chat
           </button>
         </div>
+      </div>
 
+      {/* Chat list */}
+      <div className="flex-1 overflow-y-auto">
         {loadingChats[activeModel] ? (
-          <div className="text-center py-20">
-            <Brain className="h-16 w-16 mx-auto mb-6 text-gray-600 animate-pulse" />
-            <h3 className="text-xl font-semibold text-white mb-2">Loading chats...</h3>
-            <p className="text-gray-400">Fetching your conversations</p>
-          </div>
+          <div className="text-center text-zinc-600 text-sm py-16">Loading…</div>
         ) : currentChats.length === 0 ? (
-          <div className="text-center py-20">
-            <Brain className="h-16 w-16 mx-auto mb-6 text-gray-600" />
-            <h3 className="text-xl font-semibold text-white mb-2">
-              No chats with {getModelDisplayName(activeModel)} yet
-            </h3>
-            <p className="text-gray-400 mb-6">
-              Start your first conversation to begin building memory capsules
-            </p>
-            <button 
+          <div className="flex flex-col items-center justify-center h-full gap-3 pb-16">
+            <MessageSquare className="h-8 w-8 text-zinc-700" />
+            <p className="text-zinc-500 text-sm">No chats yet</p>
+            <button
               onClick={handleNewChat}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+              className="text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg transition-colors"
             >
-              Start First Chat
+              Start first chat
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {currentChats.map((chat) => (
-              <div
+          <ul className="divide-y divide-zinc-800/60">
+            {currentChats.map(chat => (
+              <li
                 key={chat.id}
-                className="bg-gray-800 rounded-xl border border-gray-700 p-6 hover:border-gray-600 transition-colors"
+                className="group flex items-center justify-between px-6 py-4 hover:bg-zinc-900 cursor-pointer transition-colors"
+                onClick={() => handleContinueChat(chat.id)}
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center space-x-2">
-                    <MessageSquare className="h-5 w-5 text-blue-400" />
-                    <h3 className="font-semibold text-white">{chat.name}</h3>
-                  </div>
-                  <div className={`text-xs font-medium ${getMemoryColor(chat.memorySize)}`}>
-                    {chat.memorySize}
-                  </div>
-                </div>
-
-                <p className="text-gray-300 text-sm mb-4 line-clamp-2">
-                  {chat.lastMessage}
-                </p>
-
-                <div className="flex items-center justify-between text-xs text-gray-400">
-                  <div className="flex items-center space-x-1">
-                    <Clock className="h-3 w-3" />
-                    <span>{chat.timestamp.toLocaleDateString()}</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <Sparkles className="h-3 w-3" />
-                    <span>{chat.messageCount} messages</span>
+                <div className="flex items-center gap-3 min-w-0">
+                  <MessageSquare className="h-4 w-4 text-zinc-600 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-sm text-white font-medium truncate">{chat.name}</div>
+                    {chat.lastMessage && (
+                      <div className="text-xs text-zinc-500 truncate mt-0.5">{chat.lastMessage}</div>
+                    )}
                   </div>
                 </div>
-
-                <div className="mt-4 pt-4 border-t border-gray-700">
-                  <div className="flex space-x-2">
-                    <button 
-                      onClick={() => handleContinueChat(chat.id)}
-                      className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 px-3 rounded text-sm transition-colors"
-                    >
-                      Continue Chat
-                    </button>
-                    <button className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-3 rounded text-sm transition-colors">
-                      View Capsule
-                    </button>
-                  </div>
+                <div className="flex items-center gap-3 ml-4 shrink-0">
+                  <span className="text-xs text-zinc-600">{chat.messageCount}</span>
+                  <ChevronRight className="h-4 w-4 text-zinc-700 group-hover:text-zinc-400 transition-colors" />
                 </div>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </div>
     </div>

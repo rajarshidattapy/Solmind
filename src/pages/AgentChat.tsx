@@ -21,6 +21,7 @@ interface LLMConfig {
 interface AgentChatProps {
   activeModel: string;
   chatId?: string;
+  chatName?: string;
   initialMessages: Message[];
   onBack: () => void;
   onUpdateMessages: (messages: Message[]) => void;
@@ -29,9 +30,10 @@ interface AgentChatProps {
   onAddLLM: (llm: LLMConfig) => void;
 }
 
-const AgentChat: React.FC<AgentChatProps> = ({ 
-  activeModel, 
+const AgentChat: React.FC<AgentChatProps> = ({
+  activeModel,
   chatId,
+  chatName,
   initialMessages,
   onBack,
   onUpdateMessages,
@@ -73,7 +75,7 @@ const AgentChat: React.FC<AgentChatProps> = ({
   // If no LLM is available, show error message
   if (!currentLLM) {
     return (
-      <div className="flex flex-col h-screen bg-gray-900 items-center justify-center">
+      <div className="flex flex-col h-full bg-gray-900 items-center justify-center">
         <div className="text-center">
           <Bot className="h-16 w-16 mx-auto mb-4 text-gray-600" />
           <h3 className="text-xl font-semibold text-white mb-2">No LLM Available</h3>
@@ -325,7 +327,7 @@ const AgentChat: React.FC<AgentChatProps> = ({
   ];
 
   return (
-    <div className="flex flex-col h-screen bg-gray-900">
+    <div className="flex flex-col h-full bg-gray-900">
       {/* Header */}
       <div className="bg-gray-800 border-b border-gray-700 px-6 py-4">
         <div className="flex items-center justify-between">
@@ -338,7 +340,7 @@ const AgentChat: React.FC<AgentChatProps> = ({
             </button>
             <div>
               <h1 className="text-lg font-semibold text-white">
-                {actualChatId || chatId || 'New Chat'}
+                {chatName || 'New Chat'}
               </h1>
             </div>
           </div>
