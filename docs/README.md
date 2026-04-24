@@ -2,11 +2,6 @@
 
 <div align="center">
 
-
-<video src="https://github.com/user-attachments/assets/5663beec-21b5-42bc-8cde-71620eb9dc3c" controls></video>
-
-*Built for Denova Hackathon*
-
 [![Built with FastAPI](https://img.shields.io/badge/FastAPI-0.109-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?style=flat-square&logo=react)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
