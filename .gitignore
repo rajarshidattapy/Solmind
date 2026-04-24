@@ -25,3 +25,5 @@ dist-ssr
 
 backend/.env
 backend/supabase/.env
+.claude/
+resume.md

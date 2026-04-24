@@ -9,111 +9,44 @@ load_dotenv()
 
 
 class Settings(BaseSettings):
-    model_config = ConfigDict(
-        env_file=".env",
-        case_sensitive=True,
-        env_parse_none_str=None,
-        extra="ignore"  # Ignore extra fields like VITE_* variables
-    )
-    # App settings
+    model_config = ConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
+
     APP_NAME: str = "SolMind API"
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))
-    
-    # CORS - handle both JSON and comma-separated strings
-    # Make it Optional to prevent pydantic-settings from trying to parse empty strings as JSON
-    CORS_ORIGINS: Optional[List[str]] = Field(
-        default=None,
-        description="CORS allowed origins"
-    )
-    
+
+    CORS_ORIGINS: Optional[List[str]] = Field(default=None)
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: Union[str, List[str], None]) -> List[str]:
-        # Handle None or empty values
-        if v is None:
-            return [
-                "http://localhost:8080",
-                "http://localhost:5173",
-                "http://127.0.0.1:8080",
-                "http://127.0.0.1:5173",
-            ]
-        
-        if isinstance(v, str):
-            # Handle empty string
-            if not v.strip():
-                return [
-                    "http://localhost:8080",
-                    "http://localhost:5173",
-                    "http://127.0.0.1:8080",
-                    "http://127.0.0.1:5173",
-                ]
-            
-            # Try JSON first
-            if v.strip().startswith("["):
-                try:
-                    return json.loads(v)
-                except json.JSONDecodeError:
-                    pass
-            
-            # Fall back to comma-separated
-            if v.strip():
-                origins = [origin.strip() for origin in v.split(",") if origin.strip()]
-                if origins:
-                    return origins
-            
-            # Return default if empty after processing
-            return [
-                "http://localhost:8080",
-                "http://localhost:5173",
-                "http://127.0.0.1:8080",
-                "http://127.0.0.1:5173",
-            ]
-        
-        # If it's already a list, return it
-        if isinstance(v, list):
-            return v
-        
-        # Fallback to default
-        return [
+        defaults = [
             "http://localhost:8080",
             "http://localhost:5173",
             "http://127.0.0.1:8080",
             "http://127.0.0.1:5173",
         ]
-    
-    # Supabase
-    # Use VITE_ prefixed variables (shared with frontend)
-    SUPABASE_URL: str = os.getenv("VITE_SUPABASE_URL", "")
-    SUPABASE_KEY: str = os.getenv("VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY", "")
-    SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY", "")
-    
-    # LLM API Keys
+        if not v:
+            return defaults
+        if isinstance(v, list):
+            return v
+        v = v.strip()
+        if not v:
+            return defaults
+        if v.startswith("["):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                pass
+        origins = [o.strip() for o in v.split(",") if o.strip()]
+        return origins or defaults
+
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
-    
-    # Mem0 Platform API Key (for hosted memory service)
-    MEM0_API_KEY: str = os.getenv("MEM0_API_KEY", "")
-    
-    # Solana
+    SUPERMEMORY_API_KEY: str = os.getenv("SUPERMEMORY_API_KEY", "")
+
     SOLANA_RPC_URL: str = os.getenv("SOLANA_RPC_URL", "https://api.devnet.solana.com")
     SOLANA_NETWORK: str = os.getenv("SOLANA_NETWORK", "devnet")
-    
-    # JWT
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    
-    def model_post_init(self, __context):
-        # Ensure CORS_ORIGINS always has a value after initialization
-        if self.CORS_ORIGINS is None or (isinstance(self.CORS_ORIGINS, list) and len(self.CORS_ORIGINS) == 0):
-            self.CORS_ORIGINS = [
-                "http://localhost:8080",
-                "http://localhost:5173",
-                "http://127.0.0.1:8080",
-                "http://127.0.0.1:5173",
-            ]
 
 
 settings = Settings()
-

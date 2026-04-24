@@ -276,7 +276,6 @@ async def get_chat_memories(
         "agent_id": actual_agent_id,
         "memory_count": len(memories),
         "memories": memories,
-        "using_platform": memory_service.use_platform
     }
 
 
@@ -307,33 +306,14 @@ async def stake_on_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found or unauthorized")
     
-    # Check if capsule already exists for this agent
-    # We'll use agent_id as part of capsule metadata to track the relationship
-    try:
-        capsule_service._check_supabase()
-        # Search for existing capsule with this agent_id in metadata
-        result = capsule_service.supabase.table("capsules").select("*").eq("creator_wallet", wallet_address).execute()
-        existing_capsule = None
-        for row in result.data:
-            metadata = row.get("metadata", {})
-            # Handle both dict and string (JSON) formats
-            if isinstance(metadata, str):
-                try:
-                    import json
-                    metadata = json.loads(metadata)
-                except:
-                    metadata = {}
-            if isinstance(metadata, dict) and metadata.get("agent_id") == agent_id:
-                existing_capsule = row
-                logger.info(f"Found existing capsule {row.get('id')} for agent {agent_id}")
-                break
-    except Exception as e:
-        logger.error(f"Error checking for existing capsule: {e}")
-        existing_capsule = None
-    
-    # Create capsule if it doesn't exist
+    # Check if a capsule already exists for this agent
+    user_capsules = await capsule_service.get_user_capsules(wallet_address)
+    existing_capsule = next(
+        (c for c in user_capsules if isinstance(c.metadata, dict) and c.metadata.get("agent_id") == agent_id),
+        None,
+    )
+
     if not existing_capsule:
-        logger.info(f"Creating new capsule for agent {agent_id}")
         capsule_data = CapsuleCreate(
             name=agent.display_name or agent.name,
             description=stake_data.get("description", f"Memory capsule for {agent.display_name or agent.name}"),
@@ -344,15 +324,13 @@ async def stake_on_agent(
                 "agent_name": agent.name,
                 "agent_display_name": agent.display_name,
                 "platform": agent.platform,
-                "model": agent.model
-            }
+                "model": agent.model,
+            },
         )
         capsule = await capsule_service.create_capsule(capsule_data, wallet_address)
         capsule_id = capsule.id
-        logger.info(f"Created capsule {capsule_id} for agent {agent_id}")
     else:
-        capsule_id = existing_capsule["id"]
-        logger.info(f"Using existing capsule {capsule_id} for agent {agent_id}")
+        capsule_id = existing_capsule.id
     
     # Create staking entry
     staking_create = StakingCreate(

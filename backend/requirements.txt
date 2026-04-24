@@ -1,17 +1,7 @@
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
-websockets>=11.0
 pydantic==2.5.3
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
-supabase>=2.3.0
 httpx
-mem0ai
-chromadb
-upstash-redis>=1.0.0
-# httpx version will be resolved by supabase dependency (requires httpx>=0.24.0,<0.25.0)
-# Note: chromadb may require httpx>=0.28.0 which conflicts with supabase
-# This is a known issue - functionality should still work despite the warning
-# Note: solana and solders packages removed as they're not used in the codebase
-# The code uses httpx directly for Solana RPC calls
-
+supermemory

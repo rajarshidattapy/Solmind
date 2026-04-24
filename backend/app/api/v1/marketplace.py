@@ -60,40 +60,19 @@ async def search_capsules(
 
 @router.get("/debug")
 async def debug_marketplace():
-    """Debug endpoint to check all capsules in database"""
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    try:
-        from app.db.database import get_supabase
-        supabase = get_supabase()
-        
-        if not supabase:
-            return {"error": "Supabase not configured"}
-        
-        # Get all capsules
-        all_capsules = supabase.table("capsules").select("*").execute()
-        
-        logger.info(f"DEBUG: Total capsules in DB: {len(all_capsules.data)}")
-        
-        result = {
-            "total_capsules": len(all_capsules.data),
-            "capsules": []
-        }
-        
-        for row in all_capsules.data:
-            stake_amount = row.get("stake_amount")
-            result["capsules"].append({
-                "id": row.get("id"),
-                "name": row.get("name"),
-                "stake_amount": stake_amount,
-                "stake_amount_type": str(type(stake_amount)),
-                "stake_amount_float": float(stake_amount) if stake_amount is not None else None,
-                "stake_amount > 0": float(stake_amount) > 0 if stake_amount is not None else False
-            })
-        
-        return result
-    except Exception as e:
-        logger.error(f"Debug error: {e}", exc_info=True)
-        return {"error": str(e)}
+    """Debug endpoint to inspect in-memory capsule state"""
+    from app.db import store
+    caps = list(store.capsules.values())
+    return {
+        "total_capsules": len(caps),
+        "capsules": [
+            {
+                "id": c.get("id"),
+                "name": c.get("name"),
+                "stake_amount": c.get("stake_amount"),
+                "stake_amount > 0": float(c.get("stake_amount") or 0) > 0,
+            }
+            for c in caps
+        ],
+    }
 

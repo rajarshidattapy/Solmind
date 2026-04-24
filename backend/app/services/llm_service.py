@@ -125,8 +125,6 @@ class LLMService:
             agent_id
         ):
             full_content += chunk
-            if len(full_content.split()) >= 100:
-                break
             yield chunk
 
         if chat_id and self.memory_service._is_available():
@@ -231,15 +229,16 @@ class LLMService:
 
     # ---------------------------------------------------------------------
 
-    def _inject_system_prompt(self, messages, memory_context):
-        system_prompt = "You are a helpful assistant."
-        if memory_context:
-            system_prompt += f"\n\nRelevant context:\n{memory_context}"
+    def _inject_system_prompt(self, messages: List[Dict], memory_context: str) -> List[Dict]:
+        base = "You are a helpful assistant."
+        suffix = f"\n\nRelevant context:\n{memory_context}" if memory_context else ""
 
         if any(m["role"] == "system" for m in messages):
-            for m in messages:
-                if m["role"] == "system":
-                    m["content"] += "\n\n" + memory_context
-            return messages
+            if not memory_context:
+                return messages
+            return [
+                {**m, "content": m["content"] + suffix} if m["role"] == "system" else m
+                for m in messages
+            ]
 
-        return [{"role": "system", "content": system_prompt}] + messages
+        return [{"role": "system", "content": base + suffix}] + messages
