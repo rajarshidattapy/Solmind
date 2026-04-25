@@ -166,6 +166,8 @@ class KVSnapshot(BaseModel):
     wallet_address: Optional[str] = None
     created_at: datetime
     on_chain_tx: Optional[str] = None
+    filecoin_cid: Optional[str] = None
+    filecoin_gateway_url: Optional[str] = None
 
 
 class KVSnapshotCreate(BaseModel):

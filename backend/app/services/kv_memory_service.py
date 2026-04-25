@@ -12,12 +12,16 @@ models expose them, and works today with conversation-state compression.
 import base64
 import hashlib
 import json
+import logging
 import uuid
 import zlib
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from app.db import store
+from app.services.filecoin_service import FilecoinService
+
+logger = logging.getLogger(__name__)
 
 
 _ESTIMATED_CHARS_PER_TOKEN = 4  # rough approximation for token counting
@@ -66,6 +70,19 @@ class KVMemoryService:
         encoded = base64.b64encode(compressed).decode("ascii")
 
         snapshot_id = f"snap-{uuid.uuid4().hex[:12]}"
+
+        # Attempt Filecoin upload (non-blocking — failure does not abort snapshot)
+        filecoin_cid = None
+        filecoin_gateway_url = None
+        _fc = FilecoinService()
+        if _fc.is_available():
+            try:
+                filecoin_cid = _fc.upload(compressed, filename=f"{snapshot_id}.bin")
+                filecoin_gateway_url = FilecoinService.gateway_url(filecoin_cid)
+                logger.info("Snapshot %s pinned to Filecoin CID %s", snapshot_id, filecoin_cid)
+            except Exception as exc:
+                logger.warning("Filecoin upload failed for %s: %s", snapshot_id, exc)
+
         record = {
             "id": snapshot_id,
             "agent_id": agent_id,
@@ -82,6 +99,8 @@ class KVMemoryService:
             "wallet_address": wallet_address,
             "created_at": datetime.now().isoformat(),
             "on_chain_tx": None,
+            "filecoin_cid": filecoin_cid,
+            "filecoin_gateway_url": filecoin_gateway_url,
             "_data": encoded,  # internal only — not returned in API responses
         }
         store.kv_snapshots[snapshot_id] = record

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Archive, CheckCircle, XCircle, RotateCcw, Shield, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
+import { ArrowLeft, Archive, CheckCircle, XCircle, RotateCcw, Shield, ChevronDown, ChevronRight, Copy, Check, ExternalLink } from 'lucide-react';
 import { useApiClient } from '../lib/api';
 
 interface KVSnapshot {
@@ -18,6 +18,8 @@ interface KVSnapshot {
   wallet_address?: string;
   created_at: string;
   on_chain_tx?: string;
+  filecoin_cid?: string;
+  filecoin_gateway_url?: string;
 }
 
 interface RestoreResult {
@@ -196,6 +198,9 @@ const MemoryTimeline: React.FC<MemoryTimelineProps> = ({
                       <span className="text-xs text-zinc-400">{snap.message_count} msgs</span>
                       <span className="text-xs text-zinc-400">{snap.compression_ratio}x</span>
                       <span className="text-xs text-zinc-400">{snap.bits_per_token} b/tok</span>
+                      {snap.filecoin_cid && (
+                        <span className="text-xs text-blue-400 font-mono" title={`Filecoin CID: ${snap.filecoin_cid}`}>FC</span>
+                      )}
                       {verifyResult !== undefined && (
                         verifyResult
                           ? <CheckCircle className="h-4 w-4 text-emerald-400" />
@@ -243,6 +248,26 @@ const MemoryTimeline: React.FC<MemoryTimelineProps> = ({
                           </button>
                         </div>
                       </div>
+
+                      {snap.filecoin_cid && (
+                        <div className="mb-4">
+                          <div className="text-zinc-500 text-xs mb-1">Filecoin CID</div>
+                          <div className="flex items-center gap-2">
+                            <code className="text-zinc-300 text-xs font-mono truncate flex-1">{snap.filecoin_cid}</code>
+                            {snap.filecoin_gateway_url && (
+                              <a
+                                href={snap.filecoin_gateway_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-zinc-500 hover:text-blue-400 transition-colors shrink-0"
+                                title="View on Lighthouse gateway"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       {snap.on_chain_tx && (
                         <div className="mb-4">

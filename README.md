@@ -62,8 +62,76 @@ Solana (Anchor Programs)
 * **Backend:** FastAPI, Python
 * **LLM Layer:** OpenRouter
 * **Memory:** Supermemory + compressed state snapshots
+* **Storage:** Filecoin via Lighthouse (permanent snapshot pinning)
 * **Blockchain:** Solana + Anchor
 * **Payments:** SOL micropayments + staking primitives
+
+---
+
+## Running locally
+
+**Backend**
+```bash
+cd backend
+pip install -r requirements.txt
+cp ../.env.example .env
+uvicorn main:app --reload
+```
+
+**Frontend**
+```bash
+npm install
+npm run dev
+```
+
+**Environment variables** (`backend/.env`)
+
+| Variable | Required | Description |
+|---|---|---|
+| `OPENROUTER_API_KEY` | Yes | OpenRouter API key for LLM calls |
+| `SUPERMEMORY_API_KEY` | No | Semantic memory (graceful fallback if missing) |
+| `LIGHTHOUSE_API_KEY` | No | Filecoin snapshot pinning via [lighthouse.storage](https://files.lighthouse.storage/dashboard) |
+
+---
+
+## SDK
+
+```bash
+cd solmind-sdk
+pip install -e .
+```
+
+**Debate**
+```python
+from solmind import DebateSession
+
+result = DebateSession(
+    task="Should we execute this treasury swap?",
+    agents=["agent1", "agent2"],
+    mechanism="debate",
+    quorum=2,
+).run()
+
+print(result.final_decision)    # "APPROVED" | "REJECTED"
+print(result.transcript_hash)   # SHA-256
+print(result.quorum_reached)    # bool
+```
+
+**Memory**
+```python
+from solmind import PersistentMemory
+
+mem = PersistentMemory(agent_id="oracle-agent")
+
+snap = mem.snapshot(chat_id="chat-123")
+print(snap.compression_ratio)   # e.g. 4.2x
+print(snap.bits_per_token)      # e.g. 3.8 (FP16 baseline = 16)
+print(snap.filecoin_cid)        # IPFS CID if LIGHTHOUSE_API_KEY is set
+
+mem.verify(snap.id)             # re-derives SHA-256, returns verified=True/False
+mem.restore()                   # decompress + return messages
+mem.rollback("snap-abc123")     # restore older state
+```
 
 ---
 

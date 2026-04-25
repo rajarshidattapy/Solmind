@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
     SUPERMEMORY_API_KEY: str = os.getenv("SUPERMEMORY_API_KEY", "")
+    LIGHTHOUSE_API_KEY: str = os.getenv("LIGHTHOUSE_API_KEY", "")
 
     SOLANA_RPC_URL: str = os.getenv("SOLANA_RPC_URL", "https://api.devnet.solana.com")
     SOLANA_NETWORK: str = os.getenv("SOLANA_NETWORK", "devnet")
